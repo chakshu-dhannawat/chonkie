@@ -150,6 +150,17 @@ class TestNeuralChunkerInternalMethods:
         expected = ["test text"]
         assert splits == expected
 
+    def test_get_splits_merges_short_trailing_text(self, neural_chunker):
+        """Test _get_splits merges a trailing remainder below min_characters_per_chunk."""
+        neural_chunker.min_characters_per_chunk = 10
+        response = [{"start": 0, "end": 20}]
+        text = "x" * 25
+
+        splits = neural_chunker._get_splits(response, text)
+
+        assert len(splits) == 1
+        assert len(splits[0]) == 25
+
     def test_merge_close_spans_basic(self, neural_chunker):
         """Test _merge_close_spans method."""
         # Set min_characters_per_chunk for testing
@@ -164,7 +175,7 @@ class TestNeuralChunkerInternalMethods:
         merged = neural_chunker._merge_close_spans(response)
 
         expected = [
-            {"start": 12, "end": 20},  # Replaced the first span
+            {"start": 0, "end": 20},  # Merged: extended first span to cover the gap
             {"start": 30, "end": 40},
         ]
         assert merged == expected

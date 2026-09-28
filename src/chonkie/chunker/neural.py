@@ -156,18 +156,31 @@ class NeuralChunker(BaseChunker):
         return importutil.find_spec("transformers") is not None
 
     def _get_splits(self, response: list[dict[str, Any]], text: str) -> list[str]:
-        """Get the text splits from the model."""
+        """Get the text splits from the model, merging trailing remainders that are too short."""
+        if not response:
+            return [text]
+
         splits = []
         current_index = 0
         for sample in response:
             splits.append(text[current_index : sample["end"]])
             current_index = sample["end"]
-        if current_index < len(text):
-            splits.append(text[current_index:])
+
+        # If the trailing text is shorter than the configured minimum, append it to the
+        # previous chunk instead of emitting a tiny final chunk.
+        trailing = text[current_index:]
+        if trailing and len(trailing) < self.min_characters_per_chunk:
+            if splits:
+                splits[-1] += trailing
+            else:
+                splits.append(trailing)
+        elif trailing:
+            splits.append(trailing)
+
         return splits
 
     def _merge_close_spans(self, response: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Replace the split points that are too close to each other with the last span."""
+        """Drop split points that would create chunks smaller than `min_characters_per_chunk`."""
         if not response:
             return []
 
@@ -176,10 +189,11 @@ class NeuralChunker(BaseChunker):
             current_span = response[i]
             last_merged_span = merged_response[-1]
 
+            # The chunk created by the last split ends at current_span["start"].
+            # Keep the split only if that chunk is at least `min_characters_per_chunk` long.
             if current_span["start"] - last_merged_span["end"] < self.min_characters_per_chunk:
-                # If the current span is too close to the last merged one,
-                # replace the last one with the current one.
-                merged_response[-1] = current_span
+                # Drop the split by extending the last merged span to the current one.
+                last_merged_span["end"] = current_span["end"]
             else:
                 # Otherwise, append the current span.
                 merged_response.append(current_span)
